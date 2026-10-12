@@ -1,0 +1,56 @@
+{
+  "name": "NearBeam — nearby file transfer",
+  "short_name": "NearBeam",
+  "description": "Direct peer-to-peer file and text transfer between devices on the same network, at full LAN speed. End-to-end encrypted, no uploads, no accounts.",
+  "id": "/",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "categories": ["utilities", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Send files",
+      "short_name": "Send",
+      "description": "Create an invite and beam files to a nearby device.",
+      "url": "./?mode=send"
+    },
+    {
+      "name": "Receive files",
+      "short_name": "Receive",
+      "description": "Join a nearby device with an invite code.",
+      "url": "./?mode=receive"
+    }
+  ]
+}

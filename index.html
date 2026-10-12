@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0"
+    />
+    <title>NearBeam — instant file transfer between nearby devices</title>
+
+    <meta
+      name="description"
+      content="NearBeam moves files and text between devices on the same network at full LAN speed. Direct peer-to-peer WebRTC, end-to-end encrypted, no uploads, no accounts, no size limits."
+    />
+    <meta name="theme-color" content="#070b14" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f7fc" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="NearBeam" />
+    <meta name="application-name" content="NearBeam" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NearBeam — instant file transfer between nearby devices" />
+    <meta
+      property="og:description"
+      content="Direct peer-to-peer file transfer over your local network. End-to-end encrypted, no uploads, no accounts, no size limits."
+    />
+    <meta property="og:image" content="./icons/icon-512.png" />
+    <meta name="twitter:card" content="summary" />
+
+    <script src="./theme.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      NearBeam runs entirely in your browser and needs JavaScript to open a direct,
+      encrypted connection to the other device. No files are ever uploaded to a server.
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
