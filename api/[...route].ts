@@ -120,7 +120,15 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return
   }
 
-  if (url.pathname === '/api/pairings' && request.method === 'POST') {
+  if (url.pathname !== '/api/pairings') {
+    sendJson(response, 404, { error: 'Pairing endpoint not found.' })
+    return
+  }
+
+  const id = url.searchParams.get('id')
+  const field = url.searchParams.get('field')
+
+  if (request.method === 'POST' && id === null && field === null) {
     const id = randomBytes(32).toString('base64url')
     const result = await redisCommand<string | null>(
       'SET',
@@ -135,39 +143,46 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return
   }
 
-  const match = url.pathname.match(/^\/api\/pairings\/([A-Za-z0-9_-]{43})(?:\/(offer|answer))?$/)
-  if (!match) {
-    sendJson(response, 404, { error: 'Pairing endpoint not found.' })
+  if (!id || !/^[A-Za-z0-9_-]{43}$/.test(id)) {
+    sendJson(response, 400, { error: 'A valid pairing ID is required.' })
     return
   }
 
-  const [, id, field] = match
+  if (field !== null && field !== 'offer' && field !== 'answer') {
+    sendJson(response, 400, { error: 'Pairing field must be offer or answer.' })
+    return
+  }
+
   const key = pairingKey(id)
   if (request.method === 'GET') {
+    if (field !== null && field !== 'answer') {
+      sendJson(response, 400, { error: 'Only answers can be read with a field parameter.' })
+      return
+    }
     const pairing = await getPairing(id)
     if (!pairing) {
       sendJson(response, 410, { error: 'This pairing expired or was cancelled. Show a new receiver QR.' })
       return
     }
-    if (!field) {
+    if (field === null) {
       if (!pairing.offer) sendEmpty(response, 204)
       else sendJson(response, 200, { code: pairing.offer })
       return
     }
-    if (field === 'answer' && pairing.answer) {
+    if (pairing.answer) {
       await redisCommand<number>('DEL', key)
       sendJson(response, 200, { code: pairing.answer })
-      return
-    }
-    if (field === 'offer') {
-      sendJson(response, 405, { error: 'Offers are read from the base pairing endpoint.' })
       return
     }
     sendEmpty(response, 204)
     return
   }
 
-  if (request.method === 'POST' && (field === 'offer' || field === 'answer')) {
+  if (request.method === 'POST') {
+    if (field !== 'offer' && field !== 'answer') {
+      sendJson(response, 400, { error: 'A pairing field of offer or answer is required.' })
+      return
+    }
     let body: Record<string, unknown>
     try {
       body = await readJson(request)
@@ -190,7 +205,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     return
   }
 
-  if (request.method === 'DELETE' && !field) {
+  if (request.method === 'DELETE' && field === null) {
     await redisCommand<number>('DEL', key)
     sendEmpty(response, 204)
     return

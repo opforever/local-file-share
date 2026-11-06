@@ -37,9 +37,14 @@ async function createPairing(): Promise<Pairing> {
   return { id: body.id, inviteUrl: url.href }
 }
 
+function pairingEndpoint(id: string, field?: 'offer' | 'answer'): string {
+  const params = new URLSearchParams({ id })
+  if (field) params.set('field', field)
+  return `/api/pairings?${params}`
+}
+
 async function readPairingCode(id: string, field: 'offer' | 'answer', signal?: AbortSignal): Promise<string | null> {
-  const suffix = field === 'offer' ? '' : '/answer'
-  const response = await fetch(`/api/pairings/${encodeURIComponent(id)}${suffix}`, {
+  const response = await fetch(pairingEndpoint(id, field === 'answer' ? 'answer' : undefined), {
     cache: 'no-store',
     signal,
   })
@@ -53,7 +58,7 @@ async function readPairingCode(id: string, field: 'offer' | 'answer', signal?: A
 }
 
 async function sendPairingCode(id: string, field: 'offer' | 'answer', code: string): Promise<void> {
-  const response = await fetch(`/api/pairings/${encodeURIComponent(id)}/${field}`, {
+  const response = await fetch(pairingEndpoint(id, field), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
@@ -68,7 +73,7 @@ async function sendPairingCode(id: string, field: 'offer' | 'answer', code: stri
 }
 
 async function cancelPairing(id: string): Promise<void> {
-  const response = await fetch(`/api/pairings/${encodeURIComponent(id)}`, { method: 'DELETE', cache: 'no-store' })
+  const response = await fetch(pairingEndpoint(id), { method: 'DELETE', cache: 'no-store' })
   if (!response.ok && response.status !== 410) {
     const body = await readJson(response)
     throw new Error(typeof body.error === 'string' ? body.error : `Could not cancel pairing (HTTP ${response.status}).`)

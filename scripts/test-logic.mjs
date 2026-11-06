@@ -189,33 +189,35 @@ const room = await callApi('POST', '/api/pairings')
 check('hosted pairing room created', room.status, 201)
 const pairingId = room.body.id
 check('hosted pairing ID shape', /^[A-Za-z0-9_-]{43}$/.test(pairingId), true)
-check('waiting for sender offer', (await callApi('GET', `/api/pairings/${pairingId}`)).status, 204)
+const pairingUrl = `/api/pairings?id=${pairingId}`
+const answerUrl = `${pairingUrl}&field=answer`
+check('waiting for sender offer', (await callApi('GET', pairingUrl)).status, 204)
 check(
   'sender offer accepted',
-  (await callApi('POST', `/api/pairings/${pairingId}/offer`, '{"code":"NBZ1:b2ZmZXI"}')).status,
+  (await callApi('POST', `${pairingUrl}&field=offer`, '{"code":"NBZ1:b2ZmZXI"}')).status,
   204,
 )
 check(
   'duplicate sender offer rejected',
-  (await callApi('POST', `/api/pairings/${pairingId}/offer`, '{"code":"NBZ1:c2Vjb25k"}')).status,
+  (await callApi('POST', `${pairingUrl}&field=offer`, '{"code":"NBZ1:c2Vjb25k"}')).status,
   409,
 )
 check(
   'receiver reads offer',
-  (await callApi('GET', `/api/pairings/${pairingId}`)).body.code,
+  (await callApi('GET', pairingUrl)).body.code,
   'NBZ1:b2ZmZXI',
 )
 check(
   'receiver answer accepted',
-  (await callApi('POST', `/api/pairings/${pairingId}/answer`, '{"code":"NBZ1:YW5zd2Vy"}')).status,
+  (await callApi('POST', answerUrl, '{"code":"NBZ1:YW5zd2Vy"}')).status,
   204,
 )
 check(
   'sender reads answer',
-  (await callApi('GET', `/api/pairings/${pairingId}/answer`)).body.code,
+  (await callApi('GET', answerUrl)).body.code,
   'NBZ1:YW5zd2Vy',
 )
-check('pairing room removed after answer is read', (await callApi('GET', `/api/pairings/${pairingId}`)).status, 410)
+check('pairing room removed after answer is read', (await callApi('GET', pairingUrl)).status, 410)
 globalThis.fetch = originalFetch
 if (originalUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL
 else process.env.UPSTASH_REDIS_REST_URL = originalUrl
