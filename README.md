@@ -3,12 +3,12 @@
 **Direct, encrypted file & text transfer between nearby devices — at full LAN speed.**
 
 NearBeam opens a peer-to-peer WebRTC data channel between two browsers and streams files,
-folders and clipboard text straight from one device to the other. There is no upload, no
-cloud storage, no account and no file-size cap. The optional local service only helps the
-devices exchange their connection details; the file transfer itself stays peer-to-peer.
+folders and clipboard text straight from one device to the other. Files are never uploaded
+or stored. A short-lived signaling service exchanges connection details for one-scan
+pairing; the file transfer itself stays peer-to-peer.
 
-> Transfers are peer-to-peer. Pair with one QR scan using the optional local service, or
-> exchange two short codes manually without any signaling service.
+> The receiver shows the QR. The sender scans it. Pair over Vercel with the configured
+> signaling store, or exchange two short codes manually without a signaling service.
 
 | Desktop workspace | Mobile workspace | Mobile pairing |
 | :--: | :--: | :--: |
@@ -29,7 +29,7 @@ devices exchange their connection details; the file transfer itself stays peer-t
   dialog, paste images from the clipboard, or beam a snippet of text.
 - **Optional integrity verification** — streaming SHA-256 on both ends, computed while the
   bytes flow (no second read), verified on arrival.
-- **Pair however you like** — one-scan QR pairing with the optional local service, or
+- **Pair however you like** — one-scan QR pairing with the hosted signaling service, or
   serverless QR/code exchange and shareable invite links. A matching "safety code" on both
   screens confirms you paired with the right device.
 - **Installable & offline-capable PWA** — a build-time service worker precaches every asset,
@@ -41,14 +41,12 @@ devices exchange their connection details; the file transfer itself stays peer-t
 
 ## How pairing works
 
-With the local service (`npm run local`) running on the receiving device, it displays a
-one-scan QR. The sender scans it, creates the WebRTC offer, and the service returns the
-receiver's answer automatically. The service only holds short-lived signaling codes in
-memory; file data still travels directly between devices. It listens on the local
-network, so use it only on a trusted network and keep it running until pairing finishes.
+For one-scan pairing, the receiver displays a QR. The sender scans it, creates a WebRTC
+offer, and the service returns the receiver's answer automatically. The signaling service
+holds connection details for up to five minutes; file data still travels directly between
+devices.
 
-Without the local service, NearBeam stays fully serverless and the two devices exchange
-the offer and answer codes manually:
+Without a signaling service, the two devices exchange the offer and answer codes manually:
 
 ```
   Device A (sender)                        Device B (receiver)
@@ -76,7 +74,7 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-For one-scan pairing on two devices, run the local service on the receiving device:
+For one-scan pairing locally, run the companion service on the receiving device:
 
 ```bash
 npm run local
@@ -93,14 +91,20 @@ invite and response codes as before.
 
 ## Deploy to Vercel
 
-The repo is deploy-ready — `vercel.json` pins the framework, build command and output
-directory, and ships the security headers.
+The Vercel deployment includes a small serverless signaling API. It needs a Redis database
+so separate function instances can exchange the offer and answer; a static-only deployment
+cannot do that. The signaling records expire after five minutes and contain no file data.
 
 1. Push this folder to a GitHub repository.
 2. In Vercel: **Add New → Project → Import** that repository.
-3. Vercel auto-detects Vite (`build: npm run build`, output `dist`). Nothing else to set —
-   there are no environment variables because there is no backend.
-4. Deploy. Share the URL; both devices just open it.
+3. Create a Redis database in Upstash and add its REST URL and token to the Vercel project's
+   Environment Variables as `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+4. Deploy (or redeploy) the project. Open the Vercel URL on both devices, choose **Receive
+   files** on the receiver to display the QR, then choose **Send files** on the sender and
+   scan it.
+
+If these variables are missing, one-scan pairing reports that the hosted signaling store
+isn't configured. Manual two-code pairing continues to work without it.
 
 Prefer the CLI?
 
@@ -111,7 +115,8 @@ vercel link && vercel --prod
 
 ### Other hosts
 
-Any static host works, because the app is 100% client-side:
+Manual two-code pairing works on any static host. One-scan pairing requires the Vercel
+signaling API and Redis, or the companion local service:
 
 - **Netlify** — build `npm run build`, publish `dist`, add a SPA rewrite to `/index.html`.
 - **GitHub Pages** — set `base` in `vite.config.ts` to your repo path (e.g. `'/nearbeam/'`),

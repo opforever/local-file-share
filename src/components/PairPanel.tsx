@@ -8,7 +8,7 @@ interface PairPanelProps {
   role: 'host' | 'guest'
   showCode: string | null
   showCodeKind: 'invite' | 'response'
-  localPairUrl?: string | null
+  pairUrl?: string | null
   localAutoPair?: boolean
   busy: boolean
   error: string | null
@@ -23,7 +23,7 @@ export function PairPanel({
   role,
   showCode,
   showCodeKind,
-  localPairUrl = null,
+  pairUrl = null,
   localAutoPair = false,
   busy,
   error,
@@ -39,13 +39,13 @@ export function PairPanel({
   const isHost = role === 'host'
 
   const doCopy = async (kind: 'code' | 'link') => {
-    const value = kind === 'link' ? localPairUrl ?? (showCode ? buildInviteUrl(showCode) : null) : showCode
+    const value = kind === 'link' ? pairUrl ?? (showCode ? buildInviteUrl(showCode) : null) : showCode
     if (!value) return
     const ok = await copyText(value)
     if (ok) {
       setCopied(kind)
       setTimeout(() => setCopied(null), 1600)
-      notify(kind === 'link' ? (localPairUrl ? 'Pairing link copied.' : 'Invite link copied.') : 'Code copied.', 'good')
+      notify(kind === 'link' ? (pairUrl ? 'Pairing link copied.' : 'Invite link copied.') : 'Code copied.', 'good')
     } else {
       notify('Could not access the clipboard.', 'bad')
     }
@@ -63,7 +63,7 @@ export function PairPanel({
     setPaste('')
   }
 
-  const receiverQr = !isHost && localPairUrl ? localPairUrl : null
+  const receiverQr = !isHost && pairUrl ? pairUrl : null
   const senderAutoPair = isHost && localAutoPair
   const needsInput = isHost ? !connected && !senderAutoPair : !showCode && !connected && !receiverQr && !localAutoPair
   const leftTitle = receiverQr
@@ -198,7 +198,7 @@ export function PairPanel({
                 </span>
               </li>
               <li className="step">
-                <span>You’re paired. Files stream device-to-device; nothing touches a server.</span>
+                <span>You’re paired. Files stream device-to-device; no file data passes through a server.</span>
               </li>
             </>
           ) : (

@@ -8,20 +8,28 @@ import { rolldown } from 'rolldown'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 
 const root = new URL('..', import.meta.url).pathname
 const outDir = mkdtempSync(join(tmpdir(), 'nb-test-'))
 
 const bundle = await rolldown({
-  input: ['src/lib/sha256.ts', 'src/lib/codec.ts', 'src/lib/localPairing.ts'],
+  input: {
+    sha256: 'src/lib/sha256.ts',
+    codec: 'src/lib/codec.ts',
+    signaling: 'src/lib/signaling.ts',
+    'pairing-api': 'api/[...route].ts',
+  },
+  external: ['node:crypto'],
   cwd: root,
 })
 await bundle.write({ dir: outDir, format: 'esm' })
 
 const sha = await import(pathToFileURL(join(outDir, 'sha256.js')).href)
 const codec = await import(pathToFileURL(join(outDir, 'codec.js')).href)
-const localPairing = await import(pathToFileURL(join(outDir, 'localPairing.js')).href)
+const signaling = await import(pathToFileURL(join(outDir, 'signaling.js')).href)
+const pairingApi = await import(pathToFileURL(join(outDir, 'pairing-api.js')).href)
 
 let failures = 0
 function check(label, actual, expected) {
@@ -76,20 +84,138 @@ check(
   JSON.stringify(payload),
 )
 
-/* ---- Local pairing URL validation ---- */
+/* ---- Pairing URL validation ---- */
 check(
-  'local IPv4 pairing URL',
-  localPairing.isLocalPairingUrl('http://192.168.1.25:4173/?pair=abc'),
+  'private IPv4 pairing URL',
+  signaling.isAllowedPairingUrl('http://192.168.1.25:4173/?pair=abc'),
   true,
 )
-check('local .local pairing URL', localPairing.isLocalPairingUrl('http://nearbeam.local/?pair=abc'), true)
-check('public pairing URL rejected', localPairing.isLocalPairingUrl('http://example.com/?pair=abc'), false)
-check('HTTPS pairing URL rejected', localPairing.isLocalPairingUrl('https://192.168.1.25/?pair=abc'), false)
+check('local .local pairing URL', signaling.isAllowedPairingUrl('http://nearbeam.local/?pair=abc'), true)
+check('public HTTP pairing URL rejected', signaling.isAllowedPairingUrl('http://example.com/?pair=abc'), false)
+check('hosted HTTPS pairing URL accepted', signaling.isAllowedPairingUrl('https://nearbeam.vercel.app/?pair=abc'), true)
+check('FTP pairing URL rejected', signaling.isAllowedPairingUrl('ftp://192.168.1.25/?pair=abc'), false)
 check(
   'pairing id extracted',
-  localPairing.extractLocalPairingId(`http://192.168.1.25:4173/?pair=${'a'.repeat(43)}`),
+  signaling.extractPairingId(`https://nearbeam.vercel.app/?pair=${'a'.repeat(43)}`),
   'a'.repeat(43),
 )
+
+/* ---- Hosted signaling API offer/answer lifecycle ---- */
+const redis = new Map()
+const originalFetch = globalThis.fetch
+const originalUrl = process.env.UPSTASH_REDIS_REST_URL
+const originalToken = process.env.UPSTASH_REDIS_REST_TOKEN
+process.env.UPSTASH_REDIS_REST_URL = 'https://redis.test'
+process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token'
+globalThis.fetch = async (_url, options) => {
+  const [command, ...args] = JSON.parse(options.body)
+  let result
+  if (command === 'SET') {
+    const [key, value] = args
+    result = redis.has(key) ? null : 'OK'
+    if (result) redis.set(key, value)
+  } else if (command === 'GET') {
+    result = redis.get(args[0]) ?? null
+  } else if (command === 'DEL') {
+    result = Number(redis.delete(args[0]))
+  } else if (command === 'EVAL') {
+    const [, keyCount, key, field, code] = args
+    if (keyCount !== 1 || !redis.has(key)) result = -1
+    else {
+      const state = JSON.parse(redis.get(key))
+      if (state[field]) result = 0
+      else {
+        state[field] = code
+        redis.set(key, JSON.stringify(state))
+        result = 1
+      }
+    }
+  } else {
+    throw new Error(`Unexpected Redis command: ${command}`)
+  }
+  return new Response(JSON.stringify({ result }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+}
+
+class MockResponse {
+  headersSent = false
+  statusCode = 0
+  body = ''
+
+  writeHead(status) {
+    this.headersSent = true
+    this.statusCode = status
+    return this
+  }
+
+  end(body = '') {
+    this.body = body
+  }
+
+  destroy() {}
+}
+
+async function callApi(method, url, body = '') {
+  const request = Readable.from(body ? [Buffer.from(body)] : [])
+  request.method = method
+  request.url = url
+  const response = new MockResponse()
+  await pairingApi.default(request, response)
+  return {
+    status: response.statusCode,
+    body: response.body ? JSON.parse(response.body) : null,
+  }
+}
+
+delete process.env.UPSTASH_REDIS_REST_URL
+delete process.env.UPSTASH_REDIS_REST_TOKEN
+const unconfigured = await callApi('GET', '/api/info')
+check('hosted pairing explains missing Redis configuration', unconfigured.status, 503)
+check(
+  'missing config error points to Vercel environment variables',
+  unconfigured.body.error.includes('UPSTASH_REDIS_REST_URL'),
+  true,
+)
+process.env.UPSTASH_REDIS_REST_URL = 'https://redis.test'
+process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token'
+
+const info = await callApi('GET', '/api/info')
+check('hosted pairing is available when Redis is configured', info.status, 200)
+const room = await callApi('POST', '/api/pairings')
+check('hosted pairing room created', room.status, 201)
+const pairingId = room.body.id
+check('hosted pairing ID shape', /^[A-Za-z0-9_-]{43}$/.test(pairingId), true)
+check('waiting for sender offer', (await callApi('GET', `/api/pairings/${pairingId}`)).status, 204)
+check(
+  'sender offer accepted',
+  (await callApi('POST', `/api/pairings/${pairingId}/offer`, '{"code":"NBZ1:b2ZmZXI"}')).status,
+  204,
+)
+check(
+  'duplicate sender offer rejected',
+  (await callApi('POST', `/api/pairings/${pairingId}/offer`, '{"code":"NBZ1:c2Vjb25k"}')).status,
+  409,
+)
+check(
+  'receiver reads offer',
+  (await callApi('GET', `/api/pairings/${pairingId}`)).body.code,
+  'NBZ1:b2ZmZXI',
+)
+check(
+  'receiver answer accepted',
+  (await callApi('POST', `/api/pairings/${pairingId}/answer`, '{"code":"NBZ1:YW5zd2Vy"}')).status,
+  204,
+)
+check(
+  'sender reads answer',
+  (await callApi('GET', `/api/pairings/${pairingId}/answer`)).body.code,
+  'NBZ1:YW5zd2Vy',
+)
+check('pairing room removed after answer is read', (await callApi('GET', `/api/pairings/${pairingId}`)).status, 410)
+globalThis.fetch = originalFetch
+if (originalUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL
+else process.env.UPSTASH_REDIS_REST_URL = originalUrl
+if (originalToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN
+else process.env.UPSTASH_REDIS_REST_TOKEN = originalToken
 
 // Garbage must throw, not crash silently.
 for (const bad of ['', '   ', 'hello world', 'NBZ1:!!!', 'NBQ1:AAAA']) {

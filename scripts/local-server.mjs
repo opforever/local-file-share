@@ -89,8 +89,7 @@ function getPairing(id) {
 
 async function handleApi(request, response, url) {
   if (request.method === 'GET' && url.pathname === '/api/info') {
-    const address = firstLanAddress()
-    return sendJson(response, 200, { inviteBaseUrl: `http://${address}:${port}/` })
+    return sendJson(response, 200, { available: true })
   }
 
   if (request.method === 'POST' && url.pathname === '/api/pairings') {

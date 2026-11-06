@@ -23,17 +23,15 @@ import { useSettings, useTheme } from './hooks/useSettings.ts'
 import { extractCode } from './lib/codec.ts'
 import { copyText } from './lib/clipboard.ts'
 import {
-  cancelLocalPairing,
-  createLocalPairing,
-  extractLocalPairingId,
-  getLocalAnswer,
-  getLocalOffer,
-  getLocalPairingInfo,
-  isLocalPairingUrl,
-  sendLocalAnswer,
-  sendLocalOffer,
-  type LocalPairing,
-} from './lib/localPairing.ts'
+  cancelPairing,
+  checkPairingService,
+  createPairing,
+  extractPairingId,
+  isAllowedPairingUrl,
+  readPairingCode,
+  sendPairingCode,
+  type Pairing,
+} from './lib/signaling.ts'
 import type { PickedFile } from './lib/pickFiles.ts'
 import { createSinkFactory, pickReceiveFolder, purgeOpfsInbox } from './lib/sinks.ts'
 import { deviceLabel } from './lib/ua.ts'
@@ -53,10 +51,10 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [pairError, setPairError] = useState<string | null>(null)
   const [prefill, setPrefill] = useState<string | null>(null)
-  const [localPairing, setLocalPairing] = useState<LocalPairing | null>(null)
+  const [pairing, setPairing] = useState<Pairing | null>(null)
   const [localAutoPair, setLocalAutoPair] = useState(false)
   const localJoinAbortRef = useRef<AbortController | null>(null)
-  const activeLocalPairIdRef = useRef<string | null>(null)
+  const activePairingIdRef = useRef<string | null>(null)
 
   const [engine, setEngine] = useState<BeamEngine | null>(null)
   const engineRef = useRef<BeamEngine | null>(null)
@@ -137,19 +135,19 @@ export default function App() {
   const { acceptInvite, completeInvite, createInvite } = peer
   const acceptInviteRef = useRef(acceptInvite)
   acceptInviteRef.current = acceptInvite
-  const cancelPendingLocalPairing = useCallback(() => {
+  const cancelPendingPairing = useCallback(() => {
     localJoinAbortRef.current?.abort()
     localJoinAbortRef.current = null
-    const ids = new Set([localPairing?.id, activeLocalPairIdRef.current].filter((id): id is string => Boolean(id)))
-    activeLocalPairIdRef.current = null
-    setLocalPairing(null)
+    const ids = new Set([pairing?.id, activePairingIdRef.current].filter((id): id is string => Boolean(id)))
+    activePairingIdRef.current = null
+    setPairing(null)
     setLocalAutoPair(false)
     for (const id of ids) {
-      void cancelLocalPairing(id).catch((error: unknown) => {
+      void cancelPairing(id).catch((error: unknown) => {
         push(error instanceof Error ? error.message : 'Could not cancel local pairing.', 'warn')
       })
     }
-  }, [localPairing, push])
+  }, [pairing, push])
 
   const items = useSyncExternalStore(
     useCallback((listener: () => void) => (engine ? engine.subscribe(listener) : () => {}), [engine]),
@@ -182,7 +180,7 @@ export default function App() {
   /* ------------------------------ actions ------------------------------ */
 
   const startHost = useCallback(async () => {
-    cancelPendingLocalPairing()
+    cancelPendingPairing()
     setPairMode('host')
     setPairError(null)
     setGuestAnswer(null)
@@ -196,31 +194,27 @@ export default function App() {
     } finally {
       setBusy(false)
     }
-  }, [cancelPendingLocalPairing, createInvite])
+  }, [cancelPendingPairing, createInvite])
 
   const startGuest = useCallback(async () => {
-    cancelPendingLocalPairing()
+    cancelPendingPairing()
     setPairMode('guest')
     setPairError(null)
     setGuestAnswer(null)
     setLocalAutoPair(false)
     setBusy(true)
     try {
-      const info = await getLocalPairingInfo()
-      if (info) {
-        const pairing = await createLocalPairing()
-        activeLocalPairIdRef.current = pairing.id
-        setLocalPairing(pairing)
-        setLocalAutoPair(true)
-      } else {
-        setPairError('For one-scan pairing, run `npm run local` on this receiving device. You can still pair by exchanging codes manually.')
-      }
+      await checkPairingService()
+      const newPairing = await createPairing()
+      activePairingIdRef.current = newPairing.id
+      setPairing(newPairing)
+      setLocalAutoPair(true)
     } catch (error) {
-      setPairError(`Could not prepare the receiver QR: ${error instanceof Error ? error.message : 'local service unavailable.'}`)
+      setPairError(error instanceof Error ? error.message : 'Could not prepare the receiver QR.')
     } finally {
       setBusy(false)
     }
-  }, [cancelPendingLocalPairing])
+  }, [cancelPendingPairing])
 
   const hostComplete = useCallback(
     async (code: string) => {
@@ -253,7 +247,7 @@ export default function App() {
     [acceptInvite],
   )
 
-  const joinLocalPair = useCallback(
+  const joinPairing = useCallback(
     async (id: string) => {
       setPairMode('host')
       setPairError(null)
@@ -263,16 +257,16 @@ export default function App() {
       localJoinAbortRef.current?.abort()
       const controller = new AbortController()
       localJoinAbortRef.current = controller
-      activeLocalPairIdRef.current = id
+      activePairingIdRef.current = id
       try {
         const offer = await createInvite()
-        await sendLocalOffer(id, offer)
+        await sendPairingCode(id, 'offer', offer)
         const deadline = Date.now() + 5 * 60 * 1000
         while (!controller.signal.aborted && Date.now() < deadline) {
-          const answer = await getLocalAnswer(id, controller.signal)
+          const answer = await readPairingCode(id, 'answer', controller.signal)
           if (answer) {
             await completeInvite(answer)
-            activeLocalPairIdRef.current = null
+            activePairingIdRef.current = null
             return
           }
           await new Promise((resolve) => setTimeout(resolve, 750))
@@ -282,7 +276,7 @@ export default function App() {
         if (!controller.signal.aborted) {
           setPairError(error instanceof Error ? error.message : 'Could not complete local pairing.')
           setLocalAutoPair(false)
-          activeLocalPairIdRef.current = null
+          activePairingIdRef.current = null
         }
       } finally {
         if (localJoinAbortRef.current === controller) localJoinAbortRef.current = null
@@ -292,9 +286,9 @@ export default function App() {
     [createInvite, completeInvite],
   )
 
-  const localPairingId = localPairing?.id ?? null
+  const pairingId = pairing?.id ?? null
   useEffect(() => {
-    if (!localPairingId) return
+    if (!pairingId) return
     let active = true
     let inFlight = false
     let finished = false
@@ -302,14 +296,14 @@ export default function App() {
       if (inFlight || finished) return
       inFlight = true
       try {
-        const code = await getLocalOffer(localPairingId)
+        const code = await readPairingCode(pairingId, 'offer')
         if (!active) return
         if (code) {
           finished = true
           setBusy(true)
           const answer = await acceptInviteRef.current(code)
-          await sendLocalAnswer(localPairingId, answer)
-          if (active) setLocalPairing((current) => current?.id === localPairingId ? null : current)
+          await sendPairingCode(pairingId, 'answer', answer)
+          if (active) setPairing((current) => current?.id === pairingId ? null : current)
           if (active) setLocalAutoPair(true)
           if (active) setBusy(false)
         }
@@ -317,7 +311,7 @@ export default function App() {
         if (!active) return
         finished = true
         setPairError(error instanceof Error ? error.message : 'Could not receive the sender’s pairing offer.')
-        setLocalPairing((current) => current?.id === localPairingId ? null : current)
+        setPairing((current) => current?.id === pairingId ? null : current)
         setBusy(false)
       } finally {
         inFlight = false
@@ -329,17 +323,17 @@ export default function App() {
       active = false
       clearInterval(timer)
     }
-  }, [localPairingId])
+  }, [pairingId])
 
   const handleScanCode = useCallback(
     (raw: string) => {
       setScannerOpen(false)
-      const pairingId = extractLocalPairingId(raw)
+      const pairingId = extractPairingId(raw)
       if (pairingId) {
         try {
           const scannedUrl = new URL(raw)
-          if (!isLocalPairingUrl(raw)) {
-            setPairError('One-scan pairing links must point to an HTTP address on your local network.')
+          if (!isAllowedPairingUrl(raw)) {
+            setPairError('Pairing links must use HTTPS or an address on your local network.')
             setPairMode('guest')
             return
           }
@@ -350,14 +344,14 @@ export default function App() {
         } catch {
           // A local pairing ID can also be supplied without an absolute URL.
         }
-        void joinLocalPair(pairingId)
+        void joinPairing(pairingId)
         return
       }
       const code = extractCode(raw) ?? raw
       if (pairMode === 'host') void hostComplete(code)
       else void guestAccept(code)
     },
-    [guestAccept, hostComplete, joinLocalPair, pairMode],
+    [guestAccept, hostComplete, joinPairing, pairMode],
   )
 
   const handleDisconnect = useCallback(() => {
@@ -366,9 +360,9 @@ export default function App() {
     peer.disconnect()
     setPairMode('choose')
     setGuestAnswer(null)
-    cancelPendingLocalPairing()
+    cancelPendingPairing()
     push('Disconnected.', 'info')
-  }, [cancelPendingLocalPairing, peer, push, setEngineBoth])
+  }, [cancelPendingPairing, peer, push, setEngineBoth])
 
   const handleSendFiles = useCallback(
     (picked: PickedFile[]) => {
@@ -428,8 +422,8 @@ export default function App() {
     const pairingId = params.get('pair')
     const mode = params.get('mode')
     if (pairingId) {
-      if (isLocalPairingUrl(window.location.href)) void joinLocalPair(pairingId)
-      else setPairError('One-scan pairing links must point to an HTTP address on your local network.')
+      if (isAllowedPairingUrl(window.location.href)) void joinPairing(pairingId)
+      else setPairError('Pairing links must use HTTPS or an address on your local network.')
     } else if (code) {
       setPairMode('guest')
       setPrefill(code)
@@ -488,7 +482,7 @@ export default function App() {
               role={pairMode === 'host' ? 'host' : 'guest'}
               showCode={pairMode === 'host' ? peer.inviteCode : guestAnswer}
               showCodeKind={pairMode === 'host' ? 'invite' : 'response'}
-              localPairUrl={localPairing?.inviteUrl ?? null}
+              pairUrl={pairing?.inviteUrl ?? null}
               localAutoPair={localAutoPair}
               busy={busy}
               error={pairError}
@@ -499,7 +493,7 @@ export default function App() {
                 peer.cancelPairing()
                 setPairMode('choose')
                 setGuestAnswer(null)
-                cancelPendingLocalPairing()
+                cancelPendingPairing()
               }}
               notify={push}
             />
@@ -568,7 +562,7 @@ function Landing({ onSend, onReceive, busy }: { onSend: () => void; onReceive: (
       </h1>
       <p className="hero-sub">
         NearBeam opens a direct, encrypted channel between two nearby devices and streams files, folders and clipboard
-        text straight across — no cloud, no size limits. Use the optional local service for one-scan pairing.
+        text straight across — no cloud, no size limits. The receiver shows a QR for the sender to scan.
       </p>
 
       <div className="role-grid">
