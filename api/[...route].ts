@@ -98,7 +98,10 @@ async function getPairing(id: string): Promise<PairingState | null> {
   }
   if (!parsed || typeof parsed !== 'object') throw new Error('Pairing storage returned invalid state.')
   const state = parsed as Partial<PairingState>
-  if ((state.offer !== null && typeof state.offer !== 'string') || (state.answer !== null && typeof state.answer !== 'string')) {
+  if (
+    (state.offer !== undefined && state.offer !== null && typeof state.offer !== 'string') ||
+    (state.answer !== undefined && state.answer !== null && typeof state.answer !== 'string')
+  ) {
     throw new Error('Pairing storage returned invalid state.')
   }
   return { offer: state.offer ?? null, answer: state.answer ?? null }
@@ -108,7 +111,8 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   const url = new URL(request.url ?? '/', 'https://nearbeam.invalid')
   if (url.pathname === '/api/info' && request.method === 'GET') {
     try {
-      redisCredentials()
+      const result = await redisCommand<string>('PING')
+      if (result !== 'PONG') throw new Error('Pairing storage health check failed.')
       sendJson(response, 200, { available: true })
     } catch (error) {
       sendJson(response, 503, { error: error instanceof Error ? error.message : 'Pairing storage is not configured.' })

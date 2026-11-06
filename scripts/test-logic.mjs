@@ -110,7 +110,9 @@ process.env.UPSTASH_REDIS_REST_TOKEN = 'test-token'
 globalThis.fetch = async (_url, options) => {
   const [command, ...args] = JSON.parse(options.body)
   let result
-  if (command === 'SET') {
+  if (command === 'PING') {
+    result = 'PONG'
+  } else if (command === 'SET') {
     const [key, value] = args
     result = redis.has(key) ? null : 'OK'
     if (result) redis.set(key, value)
@@ -126,6 +128,9 @@ globalThis.fetch = async (_url, options) => {
       if (state[field]) result = 0
       else {
         state[field] = code
+        for (const [key, value] of Object.entries(state)) {
+          if (value === null) delete state[key]
+        }
         redis.set(key, JSON.stringify(state))
         result = 1
       }
