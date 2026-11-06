@@ -24,11 +24,9 @@ export async function getLocalPairingInfo(): Promise<LocalPairingInfo | null> {
   return { inviteBaseUrl: body.inviteBaseUrl }
 }
 
-export async function createLocalPairing(code: string): Promise<LocalPairing> {
+export async function createLocalPairing(): Promise<LocalPairing> {
   const response = await fetch('/api/pairings', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
     cache: 'no-store',
   })
   const body = await readJson(response)
@@ -39,12 +37,26 @@ export async function createLocalPairing(code: string): Promise<LocalPairing> {
   return { id: body.id, inviteUrl: body.inviteUrl }
 }
 
-export async function getLocalOffer(id: string): Promise<string> {
+export async function getLocalOffer(id: string): Promise<string | null> {
   const response = await fetch(`/api/pairings/${encodeURIComponent(id)}`, { cache: 'no-store' })
+  if (response.status === 204) return null
   const body = await readJson(response)
-  if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : `Could not read invite (HTTP ${response.status}).`)
+  if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : `Could not read pairing offer (HTTP ${response.status}).`)
   if (typeof body.code !== 'string') throw new Error('The local signaling service returned an invalid invite.')
   return body.code
+}
+
+export async function sendLocalOffer(id: string, code: string): Promise<void> {
+  const response = await fetch(`/api/pairings/${encodeURIComponent(id)}/offer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const body = await readJson(response)
+    throw new Error(typeof body.error === 'string' ? body.error : `Could not send the pairing offer (HTTP ${response.status}).`)
+  }
 }
 
 export async function sendLocalAnswer(id: string, code: string): Promise<void> {
@@ -60,8 +72,8 @@ export async function sendLocalAnswer(id: string, code: string): Promise<void> {
   }
 }
 
-export async function getLocalAnswer(id: string): Promise<string | null> {
-  const response = await fetch(`/api/pairings/${encodeURIComponent(id)}/answer`, { cache: 'no-store' })
+export async function getLocalAnswer(id: string, signal?: AbortSignal): Promise<string | null> {
+  const response = await fetch(`/api/pairings/${encodeURIComponent(id)}/answer`, { cache: 'no-store', signal })
   if (response.status === 204) return null
   const body = await readJson(response)
   if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : `Could not read the pairing response (HTTP ${response.status}).`)

@@ -94,16 +94,8 @@ async function handleApi(request, response, url) {
   }
 
   if (request.method === 'POST' && url.pathname === '/api/pairings') {
-    let body
-    try {
-      body = await readJson(request)
-    } catch (error) {
-      return sendJson(response, 400, { error: error instanceof Error ? error.message : 'Invalid JSON body.' })
-    }
-    if (!validCode(body?.code)) return sendJson(response, 400, { error: 'A valid NearBeam invite code is required.' })
-
     const id = randomBytes(32).toString('base64url')
-    pairings.set(id, { code: body.code, expiresAt: Date.now() + lifetimeMs, answer: null })
+    pairings.set(id, { offer: null, answer: null, expiresAt: Date.now() + lifetimeMs })
     const address = firstLanAddress()
     return sendJson(response, 201, {
       id,
@@ -111,7 +103,7 @@ async function handleApi(request, response, url) {
     })
   }
 
-  const match = url.pathname.match(/^\/api\/pairings\/([A-Za-z0-9_-]{40,50})(?:\/(answer))?$/)
+  const match = url.pathname.match(/^\/api\/pairings\/([A-Za-z0-9_-]{40,50})(?:\/(offer|answer))?$/)
   if (!match) return sendJson(response, 404, { error: 'Not found.' })
 
   const [, id, answerPath] = match
@@ -119,7 +111,8 @@ async function handleApi(request, response, url) {
   if (!pairing) return sendJson(response, 410, { error: 'This pairing has expired or was cancelled.' })
 
   if (request.method === 'GET' && !answerPath) {
-    return sendJson(response, 200, { code: pairing.code })
+    if (!pairing.offer) return sendEmpty(response, 204)
+    return sendJson(response, 200, { code: pairing.offer })
   }
 
   if (request.method === 'GET' && answerPath) {
@@ -128,16 +121,17 @@ async function handleApi(request, response, url) {
     return sendJson(response, 200, { code: pairing.answer })
   }
 
-  if (request.method === 'POST' && answerPath) {
-    if (pairing.answer) return sendJson(response, 409, { error: 'A response was already received.' })
+  if (request.method === 'POST' && (answerPath === 'offer' || answerPath === 'answer')) {
+    const field = answerPath
+    if (pairing[field]) return sendJson(response, 409, { error: `A pairing ${field} was already received.` })
     let body
     try {
       body = await readJson(request)
     } catch (error) {
       return sendJson(response, 400, { error: error instanceof Error ? error.message : 'Invalid JSON body.' })
     }
-    if (!validCode(body?.code)) return sendJson(response, 400, { error: 'A valid NearBeam response code is required.' })
-    pairing.answer = body.code
+    if (!validCode(body?.code)) return sendJson(response, 400, { error: `A valid NearBeam ${field} code is required.` })
+    pairing[field] = body.code
     return sendEmpty(response, 204)
   }
 
@@ -206,7 +200,7 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`NearBeam local service is ready:`)
   console.log(`  This device: http://localhost:${port}/`)
   console.log(`  Other devices: http://${firstLanAddress()}:${port}/`)
-  console.log('Use "Send files" here, then scan its QR with the other device’s camera app.')
+  console.log('Use "Receive files" here to show a QR; the sender scans it to pair.')
   console.log('Keep this process running until pairing is complete.')
 })
 

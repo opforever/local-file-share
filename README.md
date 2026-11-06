@@ -41,11 +41,11 @@ devices exchange their connection details; the file transfer itself stays peer-t
 
 ## How pairing works
 
-With the local service (`npm run local`), the sender displays a one-scan link. The
-receiving device opens that link, and the service returns WebRTC's answer automatically.
-The service only holds short-lived signaling codes in memory; file data still travels
-directly between devices. It listens on the local network, so use it only on a trusted
-network and keep it running until pairing finishes.
+With the local service (`npm run local`) running on the receiving device, it displays a
+one-scan QR. The sender scans it, creates the WebRTC offer, and the service returns the
+receiver's answer automatically. The service only holds short-lived signaling codes in
+memory; file data still travels directly between devices. It listens on the local
+network, so use it only on a trusted network and keep it running until pairing finishes.
 
 Without the local service, NearBeam stays fully serverless and the two devices exchange
 the offer and answer codes manually:
@@ -76,16 +76,16 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-For one-scan pairing on two devices, run the local service on the sending device:
+For one-scan pairing on two devices, run the local service on the receiving device:
 
 ```bash
 npm run local
 ```
 
-Open the **Other devices** URL printed in the terminal on the sending device. Pick
-**Send files**, then scan the QR with the receiving device's camera app; it opens the
-local page and completes pairing automatically. Keep the terminal process running until
-the other device connects. Both devices must be on the same Wi-Fi/network.
+Open the **Other devices** URL printed in the terminal on the receiving device and pick
+**Receive files**. On the sending device, pick **Send files** and scan the receiver's QR
+with its camera app; pairing completes automatically. Keep the terminal process running
+until the other device connects. Both devices must be on the same Wi-Fi/network.
 
 For development or serverless/manual pairing, `npm run dev` still works. Open the app on
 both devices (or two tabs/windows), pick **Send** and **Receive**, then exchange the
