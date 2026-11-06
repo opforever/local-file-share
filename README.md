@@ -4,12 +4,11 @@
 
 NearBeam opens a peer-to-peer WebRTC data channel between two browsers and streams files,
 folders and clipboard text straight from one device to the other. There is no upload, no
-cloud storage, no account and no file-size cap: the website is only static files, and the
-two devices do the rest themselves.
+cloud storage, no account and no file-size cap. The optional local service only helps the
+devices exchange their connection details; the file transfer itself stays peer-to-peer.
 
-> Pairing needs no server either. One device shows a short invite code as a QR code (or a
-> link you can drop into any chat app); the other device answers the same way. Those two
-> codes are the entire "signalling server".
+> Transfers are peer-to-peer. Pair with one QR scan using the optional local service, or
+> exchange two short codes manually without any signaling service.
 
 | Desktop workspace | Mobile workspace | Mobile pairing |
 | :--: | :--: | :--: |
@@ -30,9 +29,9 @@ two devices do the rest themselves.
   dialog, paste images from the clipboard, or beam a snippet of text.
 - **Optional integrity verification** — streaming SHA-256 on both ends, computed while the
   bytes flow (no second read), verified on arrival.
-- **Pair however you like** — QR scan (camera), QR on screen, copy/paste, or a shareable
-  invite link. A matching "safety code" on both screens confirms you paired with the right
-  device.
+- **Pair however you like** — one-scan QR pairing with the optional local service, or
+  serverless QR/code exchange and shareable invite links. A matching "safety code" on both
+  screens confirms you paired with the right device.
 - **Installable & offline-capable PWA** — a build-time service worker precaches every asset,
   so an installed NearBeam keeps working on a LAN with no internet at all.
 - **Responsive by design** — one codebase, tuned layouts for phones and desktops, dark and
@@ -41,6 +40,15 @@ two devices do the rest themselves.
   (see `vercel.json`).
 
 ## How pairing works
+
+With the local service (`npm run local`), the sender displays a one-scan link. The
+receiving device opens that link, and the service returns WebRTC's answer automatically.
+The service only holds short-lived signaling codes in memory; file data still travels
+directly between devices. It listens on the local network, so use it only on a trusted
+network and keep it running until pairing finishes.
+
+Without the local service, NearBeam stays fully serverless and the two devices exchange
+the offer and answer codes manually:
 
 ```
   Device A (sender)                        Device B (receiver)
@@ -68,8 +76,20 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-Open it on two devices on the same network (or two tabs/windows on one machine to try it
-out). One picks **Send**, the other **Receive**, scan or paste, and you're connected.
+For one-scan pairing on two devices, run the local service on the sending device:
+
+```bash
+npm run local
+```
+
+Open the **Other devices** URL printed in the terminal on the sending device. Pick
+**Send files**, then scan the QR with the receiving device's camera app; it opens the
+local page and completes pairing automatically. Keep the terminal process running until
+the other device connects. Both devices must be on the same Wi-Fi/network.
+
+For development or serverless/manual pairing, `npm run dev` still works. Open the app on
+both devices (or two tabs/windows), pick **Send** and **Receive**, then exchange the
+invite and response codes as before.
 
 ## Deploy to Vercel
 

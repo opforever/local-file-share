@@ -14,13 +14,14 @@ const root = new URL('..', import.meta.url).pathname
 const outDir = mkdtempSync(join(tmpdir(), 'nb-test-'))
 
 const bundle = await rolldown({
-  input: ['src/lib/sha256.ts', 'src/lib/codec.ts'],
+  input: ['src/lib/sha256.ts', 'src/lib/codec.ts', 'src/lib/localPairing.ts'],
   cwd: root,
 })
 await bundle.write({ dir: outDir, format: 'esm' })
 
 const sha = await import(pathToFileURL(join(outDir, 'sha256.js')).href)
 const codec = await import(pathToFileURL(join(outDir, 'codec.js')).href)
+const localPairing = await import(pathToFileURL(join(outDir, 'localPairing.js')).href)
 
 let failures = 0
 function check(label, actual, expected) {
@@ -74,6 +75,22 @@ check(
   JSON.stringify(await codec.decodePayload(`https://example.app/?nb=${encodeURIComponent(code)}`)),
   JSON.stringify(payload),
 )
+
+/* ---- Local pairing URL validation ---- */
+check(
+  'local IPv4 pairing URL',
+  localPairing.isLocalPairingUrl('http://192.168.1.25:4173/?pair=abc'),
+  true,
+)
+check('local .local pairing URL', localPairing.isLocalPairingUrl('http://nearbeam.local/?pair=abc'), true)
+check('public pairing URL rejected', localPairing.isLocalPairingUrl('http://example.com/?pair=abc'), false)
+check('HTTPS pairing URL rejected', localPairing.isLocalPairingUrl('https://192.168.1.25/?pair=abc'), false)
+check(
+  'pairing id extracted',
+  localPairing.extractLocalPairingId(`http://192.168.1.25:4173/?pair=${'a'.repeat(43)}`),
+  'a'.repeat(43),
+)
+
 // Garbage must throw, not crash silently.
 for (const bad of ['', '   ', 'hello world', 'NBZ1:!!!', 'NBQ1:AAAA']) {
   let threw = false

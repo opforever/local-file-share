@@ -8,6 +8,8 @@ interface PairPanelProps {
   role: 'host' | 'guest'
   showCode: string | null
   showCodeKind: 'invite' | 'response'
+  localPairUrl?: string | null
+  localAutoPair?: boolean
   busy: boolean
   error: string | null
   connected: boolean
@@ -21,6 +23,8 @@ export function PairPanel({
   role,
   showCode,
   showCodeKind,
+  localPairUrl = null,
+  localAutoPair = false,
   busy,
   error,
   connected,
@@ -59,7 +63,7 @@ export function PairPanel({
     setPaste('')
   }
 
-  const needsInput = isHost ? !connected : !showCode && !connected
+  const needsInput = isHost ? !connected && !localPairUrl : !showCode && !connected && !localAutoPair
 
   return (
     <section className="pair-grid">
@@ -75,9 +79,17 @@ export function PairPanel({
               : 'Scan the invite'}
         </div>
 
-        {showCode ? (
+        {showCode && !(localAutoPair && !isHost) ? (
           <>
-            <QrImage value={showCode} label={showCodeKind === 'invite' ? 'Invite QR code' : 'Response QR code'} />
+            <QrImage
+              value={localPairUrl ?? showCode}
+              label={localPairUrl ? 'One-scan pairing QR code' : showCodeKind === 'invite' ? 'Invite QR code' : 'Response QR code'}
+            />
+            {localPairUrl && (
+              <p style={{ color: 'var(--muted)', fontSize: '0.86rem', textAlign: 'center' }}>
+                Scan once with the other device’s camera app to finish pairing automatically.
+              </p>
+            )}
             <button className="code-box" onClick={() => void doCopy('code')} title="Tap to copy">
               {wrapCode(showCode)}
             </button>
@@ -86,7 +98,7 @@ export function PairPanel({
                 {copied === 'code' ? <IconCheck size={15} /> : <IconCopy size={15} />}
                 {copied === 'code' ? 'Copied' : 'Copy code'}
               </button>
-              {showCodeKind === 'invite' && (
+              {showCodeKind === 'invite' && !localPairUrl && (
                 <>
                   <button className="btn btn-sm" onClick={() => void doCopy('link')}>
                     {copied === 'link' ? <IconCheck size={15} /> : <IconLink size={15} />}
@@ -106,6 +118,15 @@ export function PairPanel({
               </button>
             </div>
           </>
+        ) : localAutoPair && !isHost ? (
+          <div style={{ display: 'grid', gap: 'var(--space-3)', justifyItems: 'center', padding: 'var(--space-5) 0' }}>
+            <span className="role-icon" style={{ width: 52, height: 52, borderRadius: 16, display: 'grid', placeItems: 'center', background: 'var(--surface-2)', color: 'var(--accent)' }}>
+              <IconCamera size={24} />
+            </span>
+            <p style={{ color: 'var(--muted)', fontSize: '0.9rem', textAlign: 'center', maxWidth: '30ch' }}>
+              Invite scanned. Returning the handshake automatically…
+            </p>
+          </div>
         ) : (
           <div style={{ display: 'grid', gap: 'var(--space-3)', justifyItems: 'center', padding: 'var(--space-5) 0' }}>
             <span className="role-icon" style={{ width: 52, height: 52, borderRadius: 16, display: 'grid', placeItems: 'center', background: 'var(--surface-2)', color: 'var(--accent)' }}>
@@ -124,10 +145,36 @@ export function PairPanel({
 
       {/* Right: what this device needs from the other device. */}
       <div className="card" style={{ display: 'grid', gap: 'var(--space-4)' }}>
-        <div className="card-title">{isHost ? 'Get the response back' : 'Get the invite'}</div>
+        <div className="card-title">
+          {localPairUrl ? 'Pair automatically' : localAutoPair && !isHost ? 'Finishing pairing' : isHost ? 'Get the response back' : 'Get the invite'}
+        </div>
 
         <ol className="step-list" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-          {isHost ? (
+          {localPairUrl ? (
+            <>
+              <li className="step">
+                <span>On the other device, scan the QR with its camera app.</span>
+              </li>
+              <li className="step">
+                <span>NearBeam returns the handshake over your local network—no second scan needed.</span>
+              </li>
+              <li className="step">
+                <span>Files transfer directly between the two devices.</span>
+              </li>
+            </>
+          ) : localAutoPair && !isHost ? (
+            <>
+              <li className="step">
+                <span>The invite was received from the sender’s local NearBeam service.</span>
+              </li>
+              <li className="step">
+                <span>Keep this page open while the direct connection starts.</span>
+              </li>
+              <li className="step">
+                <span>Files transfer directly between the two devices.</span>
+              </li>
+            </>
+          ) : isHost ? (
             <>
               <li className="step">
                 <span>
@@ -189,7 +236,9 @@ export function PairPanel({
 
         {!needsInput && !connected && (
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-            Waiting for the other device to finish the handshake… keep both screens open.
+            {localPairUrl
+              ? 'Waiting for the other device to scan and connect… keep both screens open.'
+              : 'Waiting for the other device to finish the handshake… keep both screens open.'}
           </p>
         )}
 
