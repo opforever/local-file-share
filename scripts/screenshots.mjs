@@ -128,11 +128,11 @@ await desktop.page.evaluate((size) => {
 }, SIZE)
 
 await desktop.page.waitForFunction(
-  () => [...document.querySelectorAll('.status-chip')].filter((c) => /done|verified/.test(c.textContent)).length >= 2,
+  () => [...document.querySelectorAll('.status-chip')].filter((c) => /done/.test(c.textContent)).length >= 2,
   { timeout: 60000 },
 )
 await mobile.page.waitForFunction(
-  () => [...document.querySelectorAll('.status-chip')].filter((c) => /done|verified/.test(c.textContent)).length >= 2,
+  () => [...document.querySelectorAll('.status-chip')].filter((c) => /done/.test(c.textContent)).length >= 2,
   { timeout: 60000 },
 )
 await sleep(600)

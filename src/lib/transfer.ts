@@ -12,16 +12,13 @@
  *     2. An application-level brake: the receiver asks the sender to pause
  *        when its unwritten queue grows past a threshold (slow disk / mobile).
  * - A one-chunk read-ahead hides file-read latency behind network waits.
- * - Optional streaming SHA-256 on both ends verifies integrity without ever
- *   holding a whole file in RAM and without re-reading from disk.
  * - The item list is an external store so React can subscribe with
  *   `useSyncExternalStore` and progress updates are batched, never per-chunk.
  */
 
-import { Sha256 } from './sha256.ts'
 import type { FileSink, SinkFactory, SinkLocation } from './sinks.ts'
 
-export const CHUNK_SIZE = 64 * 1024
+export const CHUNK_SIZE = 256 * 1024
 const HIGH_WATER = 8 * 1024 * 1024
 const BRAKE_ON = 32 * 1024 * 1024
 const BRAKE_OFF = 8 * 1024 * 1024
@@ -50,8 +47,6 @@ export interface TransferItem {
   error?: string
   startedAt?: number
   endedAt?: number
-  /** sha256 match result; undefined when verification is off. */
-  verified?: boolean
   /** Received payload, available once an incoming file completes. */
   file?: File
   location?: SinkLocation
@@ -72,9 +67,9 @@ export type BeamEvent =
   | { type: 'closed'; reason?: string }
 
 export interface BeamOptions {
-  verify: boolean
   sinkFactory: SinkFactory
   label: string
+  maxMessageSize: number
   onEvent?: (event: BeamEvent) => void
 }
 
@@ -82,8 +77,8 @@ export interface BeamOptions {
 
 type Wire =
   | { k: 'hello'; label: string }
-  | { k: 'meta'; id: string; name: string; path?: string; size: number; mime: string; verify?: boolean }
-  | { k: 'done'; id: string; sha?: string }
+  | { k: 'meta'; id: string; name: string; path?: string; size: number; mime: string }
+  | { k: 'done'; id: string }
   | { k: 'ack'; id: string; ok: boolean; err?: string }
   | { k: 'cancel'; id: string }
   | { k: 'text'; id: string; body: string; at: number }
@@ -99,7 +94,6 @@ interface OutgoingEntry {
 interface IncomingState {
   id: string
   sink: FileSink
-  hash: Sha256 | null
   chain: Promise<void>
   pendingBytes: number
   braking: boolean
@@ -361,7 +355,6 @@ export class BeamEngine {
     item.startedAt = performance.now()
     this.markNow()
 
-    const hash = this.opts.verify ? new Sha256() : null
     this.sendJson({
       k: 'meta',
       id: item.id,
@@ -369,16 +362,14 @@ export class BeamEngine {
       path: item.path,
       size: item.size,
       mime: item.mime,
-      verify: hash ? true : undefined,
     })
 
-    const next = chunkReader(entry.file, CHUNK_SIZE)
+    const next = chunkReader(entry.file, Math.min(CHUNK_SIZE, this.opts.maxMessageSize))
     let chunk = await next()
     while (chunk !== null) {
       if (this.cancelRequested.has(item.id)) break
       if (this.closed) throw new Error('Connection closed during transfer')
       await this.gate()
-      if (hash) hash.update(new Uint8Array(chunk))
       this.dc.send(chunk)
       this.totalOutBytes += chunk.byteLength
       this.bump(item, chunk.byteLength)
@@ -396,7 +387,7 @@ export class BeamEngine {
 
     item.status = 'finishing'
     this.markNow()
-    this.sendJson({ k: 'done', id: item.id, sha: hash ? hash.digestHex() : undefined })
+    this.sendJson({ k: 'done', id: item.id })
 
     const ok = await this.waitAck(item.id)
     item.status = ok ? 'done' : 'error'
@@ -555,7 +546,6 @@ export class BeamEngine {
     this.incoming = {
       id: msg.id,
       sink,
-      hash: msg.verify ? new Sha256() : null,
       chain: Promise.resolve(),
       pendingBytes: 0,
       braking: false,
@@ -574,7 +564,6 @@ export class BeamEngine {
     inc.chain = inc.chain.then(async () => {
       try {
         await inc.sink.write(view)
-        inc.hash?.update(view)
       } catch (error) {
         await this.failIncoming(inc, error)
         return
@@ -603,7 +592,6 @@ export class BeamEngine {
       item.file = saved.file
       item.location = saved.location
       if (saved.cleanup) this.cleanups.set(item.id, saved.cleanup)
-      if (inc.hash && msg.sha) item.verified = inc.hash.digestHex() === msg.sha
       item.status = 'done'
       item.transferred = item.size
       item.endedAt = Date.now()

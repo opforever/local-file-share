@@ -22,7 +22,7 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests (SHA-256 + invite codec)
+      - name: Unit tests (invite codec + pairing URLs)
         run: npm test
 
       - name: Production build

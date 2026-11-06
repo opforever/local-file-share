@@ -92,36 +92,40 @@ async function handleApi(request, response, url) {
     return sendJson(response, 200, { available: true })
   }
 
-  if (request.method === 'POST' && url.pathname === '/api/pairings') {
-    const id = randomBytes(32).toString('base64url')
-    pairings.set(id, { offer: null, answer: null, expiresAt: Date.now() + lifetimeMs })
+  if (url.pathname !== '/api/pairings') return sendJson(response, 404, { error: 'Not found.' })
+  const id = url.searchParams.get('id')
+  const field = url.searchParams.get('field')
+  if (request.method === 'POST' && id === null && field === null) {
+    const newId = randomBytes(32).toString('base64url')
+    pairings.set(newId, { offer: null, answer: null, expiresAt: Date.now() + lifetimeMs })
     const address = firstLanAddress()
     return sendJson(response, 201, {
-      id,
-      inviteUrl: `http://${address}:${port}/?pair=${encodeURIComponent(id)}`,
+      id: newId,
+      inviteUrl: `http://${address}:${port}/?pair=${encodeURIComponent(newId)}`,
     })
   }
+  if (!id || !/^[A-Za-z0-9_-]{43}$/.test(id)) {
+    return sendJson(response, 400, { error: 'A valid pairing ID is required.' })
+  }
+  if (field !== null && field !== 'offer' && field !== 'answer') {
+    return sendJson(response, 400, { error: 'Pairing field must be offer or answer.' })
+  }
 
-  const match = url.pathname.match(/^\/api\/pairings\/([A-Za-z0-9_-]{40,50})(?:\/(offer|answer))?$/)
-  if (!match) return sendJson(response, 404, { error: 'Not found.' })
-
-  const [, id, answerPath] = match
   const pairing = getPairing(id)
   if (!pairing) return sendJson(response, 410, { error: 'This pairing has expired or was cancelled.' })
 
-  if (request.method === 'GET' && !answerPath) {
+  if (request.method === 'GET' && field === null) {
     if (!pairing.offer) return sendEmpty(response, 204)
     return sendJson(response, 200, { code: pairing.offer })
   }
 
-  if (request.method === 'GET' && answerPath) {
+  if (request.method === 'GET' && field === 'answer') {
     if (!pairing.answer) return sendEmpty(response, 204)
     pairings.delete(id)
     return sendJson(response, 200, { code: pairing.answer })
   }
 
-  if (request.method === 'POST' && (answerPath === 'offer' || answerPath === 'answer')) {
-    const field = answerPath
+  if (request.method === 'POST' && (field === 'offer' || field === 'answer')) {
     if (pairing[field]) return sendJson(response, 409, { error: `A pairing ${field} was already received.` })
     let body
     try {
@@ -134,7 +138,7 @@ async function handleApi(request, response, url) {
     return sendEmpty(response, 204)
   }
 
-  if (request.method === 'DELETE') {
+  if (request.method === 'DELETE' && field === null) {
     pairings.delete(id)
     return sendEmpty(response, 204)
   }

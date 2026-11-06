@@ -31,17 +31,11 @@ export function useTheme() {
 const SETTINGS_KEY = 'nearbeam:settings'
 
 export interface Settings {
-  /** Stream a SHA-256 digest alongside each file and verify on arrival. */
-  verify: boolean
-  /** Allow public STUN so peers on different networks can still connect. */
-  allowRelay: boolean
   /** Trigger a browser download automatically when a file completes. */
   autoSave: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  verify: false,
-  allowRelay: false,
   autoSave: true,
 }
 
@@ -49,7 +43,12 @@ export function useSettings() {
   const [settings, setSettings] = useState<Settings>(() => {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY)
-      if (raw) return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) }
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object' && 'autoSave' in parsed && typeof parsed.autoSave === 'boolean') {
+          return { autoSave: parsed.autoSave }
+        }
+      }
     } catch {
       /* fall back to defaults */
     }

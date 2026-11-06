@@ -5,7 +5,6 @@ import { formatBytes, formatEta, formatSpeed } from '../lib/format.ts'
 import { directoryInputSupported, filesFromDataTransfer, filesFromList, type PickedFile } from '../lib/pickFiles.ts'
 import type { Settings } from '../hooks/useSettings.ts'
 import {
-  IconCheck,
   IconCopy,
   IconDownload,
   IconFile,
@@ -37,7 +36,6 @@ interface WorkspaceProps {
   samples: Sample[]
   settings: Settings
   folderName: string | null
-  safetyCode: string | null
   peerLabel: string | null
   engine: BeamEngine | null
   notes: Note[]
@@ -111,7 +109,7 @@ function statusMeta(item: TransferItem): { label: string; tone: '' | 'is-done' |
     case 'receiving':
       return { label: 'receiving', tone: 'is-active' }
     case 'done':
-      return { label: item.verified === true ? 'verified' : 'done', tone: 'is-done' }
+      return { label: 'done', tone: 'is-done' }
     case 'error':
       return { label: 'failed', tone: 'is-bad' }
     case 'canceled':
@@ -228,7 +226,7 @@ function Dropzone({ onFiles }: { onFiles: (files: PickedFile[]) => void }) {
 /* ------------------------------- workspace ------------------------------- */
 
 export function Workspace(props: WorkspaceProps) {
-  const { items, stats, samples, engine, notes, settings, folderName, safetyCode, peerLabel } = props
+  const { items, stats, samples, engine, notes, settings, folderName, peerLabel } = props
   const [draft, setDraft] = useState('')
 
   const outgoing = items.filter((item) => item.direction === 'out')
@@ -265,8 +263,8 @@ export function Workspace(props: WorkspaceProps) {
             <div className="value" style={{ fontSize: '0.98rem', lineHeight: 1.3 }}>
               {peerLabel ?? '—'}
             </div>
-            <div className="sub mono" title="Compare aloud with the other device to confirm pairing">
-              {safetyCode ? `code ${safetyCode}` : 'verifying…'}
+            <div className="sub mono" title="File data uses a direct LAN connection">
+              LAN only
             </div>
           </div>
           <Spark samples={samples} />
@@ -336,7 +334,7 @@ export function Workspace(props: WorkspaceProps) {
           </div>
           <p style={{ color: 'var(--muted)', fontSize: '0.78rem', display: 'flex', gap: 6, alignItems: 'center' }}>
             <IconLock size={13} />
-            {settings.verify ? 'Integrity verification (SHA-256) is on.' : 'Verification off for maximum speed — enable it in settings.'}
+            WebRTC encrypts the direct LAN connection automatically.
           </p>
         </div>
 
@@ -385,11 +383,6 @@ export function Workspace(props: WorkspaceProps) {
           )}
         </div>
 
-        {items.some((item) => item.verified === true) && (
-          <p style={{ color: 'var(--good)', fontSize: '0.82rem', display: 'flex', gap: 6, alignItems: 'center' }}>
-            <IconCheck size={14} /> Digests matched — files arrived bit-for-bit identical.
-          </p>
-        )}
       </div>
     </section>
   )

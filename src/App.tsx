@@ -104,10 +104,10 @@ export default function App() {
   )
 
   const onChannelOpen = useCallback(
-    (channel: RTCDataChannel) => {
+    (channel: RTCDataChannel, maxMessageSize: number) => {
       const next = new BeamEngine(channel, {
-        verify: settingsRef.current.verify,
         label: deviceLabel(),
+        maxMessageSize,
         sinkFactory: createSinkFactory(() => folderRef.current),
         onEvent,
       })
@@ -127,11 +127,7 @@ export default function App() {
     [push, setEngineBoth],
   )
 
-  const peer = usePeer({
-    settings: { allowRelay: settings.allowRelay },
-    onChannelOpen,
-    onChannelClosed,
-  })
+  const peer = usePeer({ onChannelOpen, onChannelClosed })
   const { acceptInvite, completeInvite, createInvite } = peer
   const acceptInviteRef = useRef(acceptInvite)
   acceptInviteRef.current = acceptInvite
@@ -466,7 +462,6 @@ export default function App() {
               samples={samples}
               settings={settings}
               folderName={folderName}
-              safetyCode={peer.safetyCode}
               peerLabel={peerLabel ?? peer.peerLabel}
               engine={engine}
               notes={notes}
@@ -534,14 +529,14 @@ export default function App() {
 
       <footer className="footer">
         <div className="footer-inner">
-          <span>NearBeam — direct, encrypted transfers between your own devices.</span>
+          <span>NearBeam — direct LAN transfers between your own devices.</span>
           <span className="grow" />
           <span>No uploads · No accounts · Open source</span>
         </div>
       </footer>
 
       <ScannerSheet open={scannerOpen} onClose={() => setScannerOpen(false)} onCode={handleScanCode} />
-      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onUpdate={update} connected={connected} />
+      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onUpdate={update} />
       <AboutSheet open={aboutOpen} onClose={() => setAboutOpen(false)} />
       <Toasts toasts={toasts} onDismiss={dismiss} />
     </>
@@ -561,8 +556,8 @@ function Landing({ onSend, onReceive, busy }: { onSend: () => void; onReceive: (
         Beam files at <span className="grad">LAN speed</span>.
       </h1>
       <p className="hero-sub">
-        NearBeam opens a direct, encrypted channel between two nearby devices and streams files, folders and clipboard
-        text straight across — no cloud, no size limits. The receiver shows a QR for the sender to scan.
+        NearBeam sends files directly between nearby devices on your LAN. The receiver shows a QR for the sender to
+        scan; no cloud pairing or file hashes.
       </p>
 
       <div className="role-grid">
@@ -584,7 +579,7 @@ function Landing({ onSend, onReceive, busy }: { onSend: () => void; onReceive: (
 
       <div className="trust-strip">
         <span>
-          <IconLock size={15} /> End-to-end encrypted
+          <IconLock size={15} /> Browser-required transport encryption
         </span>
         <span>
           <IconShield size={15} /> Nothing leaves your network

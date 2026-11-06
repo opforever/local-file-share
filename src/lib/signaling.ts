@@ -3,25 +3,47 @@ export interface Pairing {
   inviteUrl: string
 }
 
+function isLocalOrigin(): boolean {
+  const url = new URL(window.location.origin)
+  if (url.protocol !== 'http:') return false
+  const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  if (hostname === 'localhost' || hostname.endsWith('.local')) return true
+  const octets = hostname.split('.').map(Number)
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false
+  }
+  return (
+    octets[0] === 10 ||
+    (octets[0] === 192 && octets[1] === 168) ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 169 && octets[1] === 254)
+  )
+}
+
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   const contentType = response.headers.get('content-type') ?? ''
   if (!contentType.includes('application/json')) {
-    throw new Error('The hosted pairing API did not return JSON. Redeploy the latest NearBeam version and try again.')
+    throw new Error('The local pairing service did not return JSON. Start it with `npm run local` on the receiving device.')
   }
   return (await response.json()) as Record<string, unknown>
 }
 
 async function checkPairingService(): Promise<void> {
+  if (!isLocalOrigin()) {
+    throw new Error(
+      'One-scan pairing is local-only. On the receiving device run `npm run local`, then open the LAN address it prints.',
+    )
+  }
   const response = await fetch('/api/info', { cache: 'no-store' })
   const body = await readJson(response)
   if (!response.ok) {
     throw new Error(
       typeof body.error === 'string'
         ? body.error
-        : `The hosted pairing service returned HTTP ${response.status}.`,
+        : `The local pairing service returned HTTP ${response.status}.`,
     )
   }
-  if (body.available !== true) throw new Error('The hosted pairing service is not configured on this deployment.')
+  if (body.available !== true) throw new Error('The local pairing service is not available.')
 }
 
 async function createPairing(): Promise<Pairing> {
@@ -30,9 +52,13 @@ async function createPairing(): Promise<Pairing> {
   if (!response.ok) {
     throw new Error(typeof body.error === 'string' ? body.error : `Could not create pairing (HTTP ${response.status}).`)
   }
-  if (typeof body.id !== 'string') throw new Error('The hosted pairing service returned an invalid pairing ID.')
-
-  const url = new URL(window.location.pathname, window.location.origin)
+  if (typeof body.id !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(body.id)) {
+    throw new Error('The local pairing service returned an invalid pairing ID.')
+  }
+  if (typeof body.inviteUrl !== 'string' || !isAllowedPairingUrl(body.inviteUrl)) {
+    throw new Error('The local pairing service returned an invalid LAN link.')
+  }
+  const url = new URL(body.inviteUrl)
   url.searchParams.set('pair', body.id)
   return { id: body.id, inviteUrl: url.href }
 }
@@ -53,7 +79,7 @@ async function readPairingCode(id: string, field: 'offer' | 'answer', signal?: A
   if (!response.ok) {
     throw new Error(typeof body.error === 'string' ? body.error : `Could not read pairing ${field} (HTTP ${response.status}).`)
   }
-  if (typeof body.code !== 'string') throw new Error(`The hosted pairing service returned an invalid ${field}.`)
+  if (typeof body.code !== 'string') throw new Error(`The local pairing service returned an invalid ${field}.`)
   return body.code
 }
 
@@ -93,7 +119,6 @@ export function extractPairingId(raw: string): string | null {
 export function isAllowedPairingUrl(raw: string): boolean {
   try {
     const url = new URL(raw)
-    if (url.protocol === 'https:') return true
     if (url.protocol !== 'http:') return false
 
     const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()

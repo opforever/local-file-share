@@ -10,22 +10,22 @@ const PRINCIPLES: Array<{ icon: typeof IconBolt; title: string; body: string }> 
   {
     icon: IconWifi,
     title: 'Device to device',
-    body: 'Files travel over a direct WebRTC data channel between the two browsers. On the same Wi‑Fi or Ethernet that means full LAN throughput — often hundreds of MB/s — with no relay in the middle.',
+    body: 'Files travel over a direct WebRTC data channel between the browsers. Speed depends on both devices, their actual Wi‑Fi link, and receive storage.',
   },
   {
     icon: IconLock,
-    title: 'Encrypted in transit',
-    body: 'Every data channel is DTLS‑encrypted end to end. The pairing codes only carry the handshake; your files are never readable by anyone else, and nothing is uploaded.',
+    title: 'Browser transport',
+    body: 'WebRTC requires transport encryption in browsers. NearBeam cannot turn it off; no extra file hashes or verification codes are added.',
   },
   {
     icon: IconShield,
-    title: 'No server, no account',
-    body: 'The website is just static files. Pairing happens by showing a QR code or pasting a code between your own devices — there is no backend storing or routing your data.',
+    title: 'Local pairing only',
+    body: 'The receiver runs the short-lived pairing helper on the LAN. No Redis, cloud signaling, STUN or TURN service is used.',
   },
   {
     icon: IconBolt,
     title: 'Built for big transfers',
-    body: 'Chunked streaming with backpressure keeps memory flat, receives are written straight to disk where supported, and folders, resume-friendly queues and optional SHA‑256 verification are included.',
+    body: 'Chunked streaming with backpressure keeps memory bounded. Receives can write straight to disk where supported.',
   },
 ]
 
@@ -58,8 +58,8 @@ export function AboutSheet({ open, onClose }: AboutSheetProps) {
         <div className="card" style={{ background: 'var(--surface-2)' }}>
           <div className="card-title">Pairing in one line</div>
           <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>
-            One device creates an invite (a compressed WebRTC offer) and shows it as a QR code or link. The other device
-            answers the same way. Those two short codes are the entire “server”.
+            The receiver displays a QR through the local helper; the sender scans it and the handshake completes
+            automatically. Files then flow directly between devices.
           </p>
         </div>
 
@@ -67,15 +67,15 @@ export function AboutSheet({ open, onClose }: AboutSheetProps) {
           <div className="card-title">Tips for top speed</div>
           <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--muted)', fontSize: '0.9rem', display: 'grid', gap: 6 }}>
             <li>Keep both devices on the same network; 5 GHz Wi‑Fi or wired beats 2.4 GHz by a wide margin.</li>
-            <li>Leave “Verify integrity” off when speed matters more than a checksum.</li>
+            <li>Check both devices’ actual Wi‑Fi link speed; “5 GHz” is a band, not a throughput guarantee.</li>
             <li>On desktop, pick a save folder so files stream straight to disk.</li>
-            <li>Install NearBeam as an app to use it on a LAN with no internet at all.</li>
+            <li>Keep the devices on the same local network and avoid guest Wi‑Fi or VPNs.</li>
           </ul>
         </div>
 
         <p style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
-          NearBeam is open source and self-hostable — deploy the static build anywhere (Vercel, Netlify, GitHub Pages,
-          or your own box). Works best in current Chrome, Edge, Firefox and Safari.
+          NearBeam is open source and self-hostable. Run the local companion on the receiving device for one-scan
+          pairing. Works best in current Chrome, Edge, Firefox and Safari.
         </p>
       </div>
     </Modal>

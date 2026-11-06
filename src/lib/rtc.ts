@@ -1,25 +1,14 @@
 /**
- * WebRTC plumbing: ICE configuration, gathering, stats and the shared
- * "safety code" both peers derive from the exchanged offer/answer pair.
+ * WebRTC plumbing: LAN-only ICE configuration, gathering and stats.
  */
-
-import { Sha256 } from './sha256.ts'
-
-export interface RtcSettings {
-  /** When false (default) only on-LAN candidates are used: fastest & private. */
-  allowRelay: boolean
-}
 
 /**
  * An intentionally empty ICE server list means "host candidates only": the
- * two browsers talk directly over the local network with no STUN/TURN hop and
- * nothing leaves the LAN. Users can opt into public STUN to bridge networks.
+ * two browsers talk directly over the local network with no STUN/TURN hop.
  */
-export function rtcConfiguration(settings: RtcSettings): RTCConfiguration {
+export function rtcConfiguration(): RTCConfiguration {
   return {
-    iceServers: settings.allowRelay
-      ? [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
-      : [],
+    iceServers: [],
     bundlePolicy: 'max-bundle',
   }
 }
@@ -150,17 +139,4 @@ export async function readConnectionStats(pc: RTCPeerConnection): Promise<Connec
     bytesReceived: active.bytesReceived ?? 0,
     direct,
   }
-}
-
-/**
- * A short code both sides can read aloud to confirm they are paired with the
- * device they intend. Both peers hash the same (offer, answer) pair, so the
- * value matches on each end; a mismatch means a mixed-up invite.
- */
-export async function sessionSafetyCode(offerSdp: string, answerSdp: string): Promise<string> {
-  const digest = new Sha256()
-    .update(new TextEncoder().encode(`nearbeam/1\n${offerSdp}\n${answerSdp}`))
-    .digest()
-  const hex = Array.from(digest.slice(0, 8), (b) => b.toString(16).padStart(2, '0')).join('')
-  return hex.match(/.{4}/g)?.join('-').toUpperCase() ?? hex.toUpperCase()
 }

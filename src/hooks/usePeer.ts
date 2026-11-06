@@ -5,10 +5,8 @@ import {
   EMPTY_STATS,
   readConnectionStats,
   rtcConfiguration,
-  sessionSafetyCode,
   waitIceGathering,
   type ConnectionStats,
-  type RtcSettings,
 } from '../lib/rtc.ts'
 import { deviceLabel } from '../lib/ua.ts'
 
@@ -22,12 +20,11 @@ interface SignalingPayload {
 }
 
 export interface UsePeerOptions {
-  settings: RtcSettings
-  onChannelOpen?: (channel: RTCDataChannel) => void
+  onChannelOpen?: (channel: RTCDataChannel, maxMessageSize: number) => void
   onChannelClosed?: (reason: string) => void
 }
 
-export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOptions) {
+export function usePeer({ onChannelOpen, onChannelClosed }: UsePeerOptions) {
   const [phase, setPhase] = useState<PairPhase>('idle')
   const [role, setRole] = useState<'host' | 'guest' | null>(null)
   const [inviteCode, setInviteCode] = useState<string | null>(null)
@@ -36,12 +33,9 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
   const [iceState, setIceState] = useState<RTCIceConnectionState>('new')
   const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState<ConnectionStats>(EMPTY_STATS)
-  const [safetyCode, setSafetyCode] = useState<string | null>(null)
 
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const channelRef = useRef<RTCDataChannel | null>(null)
-  const offerSdpRef = useRef<string | null>(null)
-  const answerSdpRef = useRef<string | null>(null)
   const previousStatsRef = useRef<{ bytesSent: number; bytesReceived: number; at: number } | null>(null)
   const [selfLabel] = useState(() => deviceLabel())
 
@@ -51,11 +45,8 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
       pcRef.current?.close()
       channelRef.current = null
       pcRef.current = null
-      offerSdpRef.current = null
-      answerSdpRef.current = null
       previousStatsRef.current = null
       setInviteCode(null)
-      setSafetyCode(null)
       setStats(EMPTY_STATS)
       setConnectionState('new')
       setIceState('new')
@@ -79,12 +70,13 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
       channel.onopen = () => {
         setPhase('connected')
         setError(null)
-        onChannelOpen?.(channel)
-        const offer = offerSdpRef.current
-        const answer = answerSdpRef.current
-        if (offer && answer) {
-          void sessionSafetyCode(offer, answer).then(setSafetyCode).catch(() => undefined)
-        }
+        const negotiatedSize = pcRef.current?.sctp?.maxMessageSize
+        onChannelOpen?.(
+          channel,
+          typeof negotiatedSize === 'number' && Number.isFinite(negotiatedSize) && negotiatedSize > 0
+            ? negotiatedSize
+            : 64 * 1024,
+        )
       }
       channel.onclose = () => onChannelClosed?.('The other device closed the connection.')
       channel.onerror = () => onChannelClosed?.('The data channel reported an error.')
@@ -98,7 +90,7 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
       pc.onconnectionstatechange = () => {
         setConnectionState(pc.connectionState)
         if (pc.connectionState === 'failed') {
-          teardown('The connection failed. Both devices usually need to be on the same Wi‑Fi/network — or enable “internet fallback” in settings.')
+          teardown('The connection failed. Both devices must be on the same Wi‑Fi/network, with local device-to-device connections allowed.')
         } else if (pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
           // `disconnected` often recovers on flaky Wi‑Fi; only surface failure.
           if (pc.connectionState === 'closed') onChannelClosed?.('Connection closed.')
@@ -112,7 +104,7 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
   /** Host: build an offer and return its shareable invite code. */
   const createInvite = useCallback(async (): Promise<string> => {
     teardown()
-    const pc = new RTCPeerConnection(rtcConfiguration(settings))
+    const pc = new RTCPeerConnection(rtcConfiguration())
     wirePeer(pc)
     wireChannel(createBeamChannel(pc))
     setRole('host')
@@ -122,10 +114,7 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
     await waitIceGathering(pc)
-    // Capture the SDP *after* gathering so the safety code hashes exactly the
-    // string the peer receives (including candidates).
     const offerSdp = pc.localDescription?.sdp ?? offer.sdp ?? ''
-    offerSdpRef.current = offerSdp
     const payload: SignalingPayload = {
       v: 1,
       t: 'offer',
@@ -135,7 +124,7 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
     const code = await encodePayload(payload)
     setInviteCode(code)
     return code
-  }, [settings, teardown, wireChannel, wirePeer, selfLabel])
+  }, [teardown, wireChannel, wirePeer, selfLabel])
 
   /** Guest: consume an offer code and return the answer code to send back. */
   const acceptInvite = useCallback(
@@ -145,7 +134,7 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
       if (!payload || payload.t !== 'offer' || typeof payload.sdp !== 'string') {
         throw new Error('That code is not a NearBeam invite.')
       }
-      const pc = new RTCPeerConnection(rtcConfiguration(settings))
+      const pc = new RTCPeerConnection(rtcConfiguration())
       wirePeer(pc)
       pc.ondatachannel = (event) => wireChannel(event.channel)
       setRole('guest')
@@ -154,12 +143,10 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
       setPeerLabel(payload.label ?? null)
 
       await pc.setRemoteDescription({ type: 'offer', sdp: payload.sdp })
-      offerSdpRef.current = payload.sdp
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
       await waitIceGathering(pc)
       const answerSdp = pc.localDescription?.sdp ?? answer.sdp ?? ''
-      answerSdpRef.current = answerSdp
       const response: SignalingPayload = {
         v: 1,
         t: 'answer',
@@ -168,7 +155,7 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
       }
       return encodePayload(response)
     },
-    [settings, teardown, wireChannel, wirePeer, selfLabel],
+    [teardown, wireChannel, wirePeer, selfLabel],
   )
 
   /** Host: apply the guest's answer to finish the handshake. */
@@ -180,7 +167,6 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
       throw new Error('That code is not a NearBeam response.')
     }
     await pc.setRemoteDescription({ type: 'answer', sdp: payload.sdp })
-    answerSdpRef.current = payload.sdp
     setInviteCode(null)
   }, [])
 
@@ -232,7 +218,6 @@ export function usePeer({ settings, onChannelOpen, onChannelClosed }: UsePeerOpt
     iceState,
     error,
     stats,
-    safetyCode,
     selfLabel,
     channel: channelRef,
     createInvite,
